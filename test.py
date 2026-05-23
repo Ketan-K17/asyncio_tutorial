@@ -1,25 +1,19 @@
-# reaching out to a server 5 times, in multi-threaded manner
+import asyncio
+from util import delay
 
-import time
-import requests
-import threading
+async def add_one(number: int) -> int:
+    print("inside add_one()")
+    return number + 1
 
-THREAD_COUNT = 5
+async def hello_world_message() -> str:
+    await delay(1)
+    print("returning hello world")
+    return 'Hello World!'
 
-def read_example() -> None:
-    response = requests.get('https://www.example.com')
-    print(response.status_code)
+async def main() -> None:
+    message = await hello_world_message()
+    one_plus_one = await add_one(1)
+    print(one_plus_one)
+    print(message)
 
-if __name__ == '__main__':
-    sync_start = time.time()
-    threads = []
-    for i in range(THREAD_COUNT):
-        t = threading.Thread(target=read_example)
-        t.start()
-        threads.append(t)
-
-    for t in threads:
-        t.join()
-
-    sync_end = time.time()
-    print(f'Running multithreaded took {sync_end - sync_start:.4f} seconds.') # 0.17s
+asyncio.run(main())
