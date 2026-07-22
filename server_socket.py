@@ -1,47 +1,53 @@
+"""
+What we've built is akin to a big part of what asyncio's event loop does under the
+hood. In this case, the events that matter are sockets receiving data. Each iteration of
+our event loop and the asyncio event loop is triggered by either a socket event happening, or a timeout triggering an iteration of the loop. In the asyncio event loop,
+when any of these two things happen, coroutines that are waiting to run will do so until they either complete or they hit the next await statement. When we hit an await
+in a coroutine that utilizes a non-blocking socket, it will register that socket with the
+system's selector and keep track that the coroutine is paused waiting for a result. We
+can translate this into pseudocode that demonstrates the concept:
+
+paused = []
+ready = []
+while True:
+    paused, new_sockets = run_ready_tasks(ready)
+    selector.register(new_sockets)
+    timeout = calculate_timeout()
+    events = selector.select(timeout)
+    ready = process_events(events)
+"""
+
+import selectors
 import socket
+from selectors import SelectorKey
+from typing import List, Tuple
 
-# setting up a server socket
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # tcp server socket
+selector = selectors.DefaultSelector()
+
+server_socket = socket.socket()
 server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-# binding the socket to an address so that it listens to calls on that address
 server_address = ('127.0.0.1', 8000)
+server_socket.setblocking(False)
 server_socket.bind(server_address)
-
-# make the server socket listen for connections on above address, the accept() method then blocks until we have a connection, that method will then return the client's socket object, and its address
 server_socket.listen()
 
-# mark server_socker as non-blocking
-server_socket.setblocking(False)
+selector.register(server_socket, selectors.EVENT_READ)
 
-print("waiting for connections...")
+while True:
+    events: List[Tuple[SelectorKey, int]] = selector.select(timeout=1)
+    if len(events) == 0:
+        print('No events, waiting a bit more!')
 
-
-connections = []
-try:
-    while True:
-        try:
-            connection, client_address = server_socket.accept()
+    for event, _ in events:
+        event_socket = event.fileobj
+        if event_socket == server_socket:
+            connection, address = server_socket.accept()
             connection.setblocking(False)
-            print(f'I got a connection from {client_address}!')
-            connections.append(connection)
-        except BlockingIOError: # you get this error because the given socket may have no data, at which point it asks you to check later..
-            pass
-        for connection in connections:
-            try:
-                buffer = b''
-                while buffer[-2:] != b'\r\n':
-                    data = connection.recv(2)
-                    if not data:
-                        break
-                    else:
-                        print(f'I got data: {data}!')
-                        buffer = buffer + data
+            print(f"I got a connection from {address}")
+            selector.register(connection, selectors.EVENT_READ)
 
-                print(f"All the data is: {buffer}")
-                connection.sendall(buffer)
-            
-            except BlockingIOError:
-                pass 
-finally:
-    server_socket.close()
+        else:
+            data = event_socket.recv(1024)
+            print(f"I got some data: {data}")
+            event_socket.send(data)
+
